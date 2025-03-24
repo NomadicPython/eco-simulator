@@ -14,7 +14,7 @@ from utilities import *
 import json
 
 
-class community:
+class Community:
     """TODO
     Each community has the following attributes to be functional
 
@@ -52,6 +52,9 @@ class community:
             param_dict = json.load(f)
 
         self.params = param_dict
+        for key, value in param_dict.items():
+            if isinstance(value, list) and key != "cv":
+                self.params[key] = np.array(value)
 
         # load consumer preference
         self.C, self.species_names, self.resource_names = create_c_matrix(
@@ -128,12 +131,12 @@ class community:
             "maintenance_energy": [1] * num_species,
             "w": [1] * num_resources,
             "cv": 0.1,
-            "R_intake": [0] * num_resources,
+            "R_intake": [1] + [0]*(num_resources-1)
         }
         with open(os.path.join(data_path, "parameters.json"), "w") as f:
             json.dump(param_dict, f, indent=4)
 
-    def __str__(self):
+    def __str__(self) -> str:
         """Prints the community object with the data loaded"""
         return (
             f"Community: {self.exp}\n"
@@ -146,20 +149,73 @@ class community:
         Create the dynamics of the system, vectorized
         """
 
-        def consumer_dynamics(N, R, C, D, g, h, l, w, m):
+        def dynamics(t, y, C, D, l, params):
             """
-            Calculate the growth rate of the species
+            :param t: time
+            :param y: state vector
+            :param C: consumer preference matrix
+            :param D: array of metabolic matrices for each species
+            :param l: leakage coefficient matrix (species x resources)
+            :param params: parameters
+            :return: rate of change of species and resources
             """
-            return g * N * (np.einsum("j,ij,ij,j->i", w, 1 - l, C, R) - m)
+            # unpack state vector
+            N = y[: len(C)]
+            R = y[len(C) :]
 
-        def resource_dynamics(N, R, C, D, g, h, l, w, m):
-            """
-            Calculate the rate of change of resources
-            """
-            return (
-                h  # intake
-                - R * np.einsum("ji,j", C, N)  # consumption
-                + np.einsum("b,b,j,jb,jb,jib->i", R, w, N, l, C, D) / w  # production
+            def consumer_dynamics(
+                N: np.ndarray,
+                R: np.ndarray,
+                C: np.ndarray,
+                g: np.ndarray,
+                l: np.ndarray,
+                w: np.ndarray,
+                m: np.ndarray,
+            ) -> np.ndarray:
+                """
+                Calculate the growth rate of the species
+                :param N: abundance of species
+                :param R: abundance of resources
+                :param C: consumer preference matrix
+                :param g: growth factor for each species
+                :param l: leakage coefficient matrix (species x resources)
+                :param w: energy factor for each resource
+                :param m: maintenance energy for each species
+                :return: array of growth rates of each species
+                """
+                return g * N * (np.einsum("j,ij,ij,j->i", w, 1 - l, C, R) - m)
+
+            def resource_dynamics(
+                N: np.ndarray,
+                R: np.ndarray,
+                C: np.ndarray,
+                D: np.ndarray,
+                h: np.ndarray,
+                l: np.ndarray,
+                w: np.ndarray
+            ) -> np.ndarray:
+                """
+                Calculate the rate of change of resources
+                :param N: abundance of species
+                :param R: abundance of resources
+                :param C: consumer preference matrix
+                :param D: array of metabolic matrices for each species
+                :param h: uptake rate for resources
+                :param l: leakage coefficient matrix (species x resources)
+                :param w: energy factor for each resource
+                :return: array of production rates of each resource
+                """
+                return (
+                    h  # intake
+                    - R * np.einsum("ji,j", C, N)  # consumption
+                    + np.einsum("b,b,j,jb,jb,jib->i", R, w, N, l, C, D) / w  # production
+                )
+            
+            return np.concatenate(
+                (
+                    consumer_dynamics(N, R, C, params["growth_factor"], l, params["w"], params["maintenance_energy"]),
+                    resource_dynamics(N, R, C, D, params["R_intake"], l, params["w"])
+                )
             )
 
-        self.dynamics = [consumer_dynamics, resource_dynamics]
+        self.dynamics = dynamics
