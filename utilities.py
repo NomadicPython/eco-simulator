@@ -49,7 +49,7 @@ def create_c_matrix(
     """
     species_names = consumer_pref.index.to_list()
     resource_names = consumer_pref.columns.to_list()
-    
+
     consumer_pref = consumer_pref.to_numpy()
     consumer_pref = np.abs(
         np.random.default_rng().normal(
@@ -70,7 +70,7 @@ def create_d_matrix(metabolic_df: pd.DataFrame) -> np.ndarray:
     )
 
 
-def extract_d_matrices(combined_metabolic_csv: str) -> list:
+def extract_d_matrices(combined_metabolic_csv: str) -> np.ndarray:
     """Extracts species specific DF from a single csv file
 
     :param combined_metabolic_csv: path to the csv file
@@ -80,17 +80,3 @@ def extract_d_matrices(combined_metabolic_csv: str) -> list:
     species_list = data.index.unique()
     D = [data.loc[species].set_index("resource") for species in species_list]
     return np.array(D)
-
-
-def dNdt(N,R,C,D,l,w):
-    """
-    Create the consumer dynamics matrix
-    :param N: vector of species
-    :param R: vector of resources
-    :param C: consumer preference matrix
-    :param D: metabolic matrices
-    :param l: leakage coefficients
-    :param w: growth rate
-    :return: consumer dynamics matrix
-    """
-    return np.dot(C, np.dot(D, (1 - l))) + w * np.eye(N)
