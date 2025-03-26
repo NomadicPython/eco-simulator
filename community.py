@@ -12,6 +12,7 @@ import numpy as np
 import pandas as pd
 from utilities import *
 import json
+import scipy.integrate
 
 
 class Community:
@@ -131,7 +132,7 @@ class Community:
             "maintenance_energy": [1] * num_species,
             "w": [1] * num_resources,
             "cv": 0.1,
-            "R_intake": [1] + [0]*(num_resources-1)
+            "R_intake": [1] + [0] * (num_resources - 1),
         }
         with open(os.path.join(data_path, "parameters.json"), "w") as f:
             json.dump(param_dict, f, indent=4)
@@ -149,6 +150,54 @@ class Community:
         Create the dynamics of the system, vectorized
         """
 
+        def consumer_dynamics(
+            N: np.ndarray,
+            R: np.ndarray,
+            C: np.ndarray,
+            g: np.ndarray,
+            l: np.ndarray,
+            w: np.ndarray,
+            m: np.ndarray,
+        ) -> np.ndarray:
+            """
+            Calculate the growth rate of the species
+            :param N: abundance of species
+            :param R: abundance of resources
+            :param C: consumer preference matrix
+            :param g: growth factor for each species
+            :param l: leakage coefficient matrix (species x resources)
+            :param w: energy factor for each resource
+            :param m: maintenance energy for each species
+            :return: array of growth rates of each species
+            """
+            return g * N * (np.einsum("j,ij,ij,j->i", w, 1 - l, C, R) - m)
+
+        def resource_dynamics(
+            N: np.ndarray,
+            R: np.ndarray,
+            C: np.ndarray,
+            D: np.ndarray,
+            h: np.ndarray,
+            l: np.ndarray,
+            w: np.ndarray,
+        ) -> np.ndarray:
+            """
+            Calculate the rate of change of resources
+            :param N: abundance of species
+            :param R: abundance of resources
+            :param C: consumer preference matrix
+            :param D: array of metabolic matrices for each species
+            :param h: uptake rate for resources
+            :param l: leakage coefficient matrix (species x resources)
+            :param w: energy factor for each resource
+            :return: array of production rates of each resource
+            """
+            return (
+                h  # intake
+                - R * np.einsum("ji,j", C, N)  # consumption
+                + np.einsum("b,b,j,jb,jb,jib->i", R, w, N, l, C, D) / w  # production
+            )
+
         def dynamics(t, y, C, D, l, params):
             """
             :param t: time
@@ -163,59 +212,62 @@ class Community:
             N = y[: len(C)]
             R = y[len(C) :]
 
-            def consumer_dynamics(
-                N: np.ndarray,
-                R: np.ndarray,
-                C: np.ndarray,
-                g: np.ndarray,
-                l: np.ndarray,
-                w: np.ndarray,
-                m: np.ndarray,
-            ) -> np.ndarray:
-                """
-                Calculate the growth rate of the species
-                :param N: abundance of species
-                :param R: abundance of resources
-                :param C: consumer preference matrix
-                :param g: growth factor for each species
-                :param l: leakage coefficient matrix (species x resources)
-                :param w: energy factor for each resource
-                :param m: maintenance energy for each species
-                :return: array of growth rates of each species
-                """
-                return g * N * (np.einsum("j,ij,ij,j->i", w, 1 - l, C, R) - m)
-
-            def resource_dynamics(
-                N: np.ndarray,
-                R: np.ndarray,
-                C: np.ndarray,
-                D: np.ndarray,
-                h: np.ndarray,
-                l: np.ndarray,
-                w: np.ndarray
-            ) -> np.ndarray:
-                """
-                Calculate the rate of change of resources
-                :param N: abundance of species
-                :param R: abundance of resources
-                :param C: consumer preference matrix
-                :param D: array of metabolic matrices for each species
-                :param h: uptake rate for resources
-                :param l: leakage coefficient matrix (species x resources)
-                :param w: energy factor for each resource
-                :return: array of production rates of each resource
-                """
-                return (
-                    h  # intake
-                    - R * np.einsum("ji,j", C, N)  # consumption
-                    + np.einsum("b,b,j,jb,jb,jib->i", R, w, N, l, C, D) / w  # production
-                )
-            
             return np.concatenate(
                 (
-                    consumer_dynamics(N, R, C, params["growth_factor"], l, params["w"], params["maintenance_energy"]),
-                    resource_dynamics(N, R, C, D, params["R_intake"], l, params["w"])
+                    consumer_dynamics(
+                        N,
+                        R,
+                        C,
+                        params["growth_factor"],
+                        l,
+                        params["w"],
+                        params["maintenance_energy"],
+                    ),
+                    resource_dynamics(N, R, C, D, params["R_intake"], l, params["w"]),
                 )
             )
 
         self.dynamics = dynamics
+
+        def detailed_resource_dynamics(y, C, D, l, params) -> dict:
+            """
+            Calculate the rate of change of resources
+
+            :param N: abundance of species
+            :param R: abundance of resources
+            :param C: consumer preference matrix
+            :param D: array of metabolic matrices for each species
+            :param h: uptake rate for resources
+            :param l: leakage coefficient matrix (species x resources)
+            :param w: energy factor for each resource
+            :return: array of production rates of each resource
+            """
+            return {
+                "intake": params["R_intake"],
+                "consumption": y[len(C) :] * np.einsum("ji,j", C, y[: len(C)]),
+                "production": np.einsum(
+                    "b,b,j,jb,jb,jib->i", y[len(C) :], params["w"], y[: len(C)], l, C, D
+                )
+                / params["w"],
+            }
+
+        self.detailed_resource_dynamics = detailed_resource_dynamics
+
+    def integrate(self, time: int | float, y0: np.ndarray | None = None, **kwargs) -> scipy.integrate._ivp.ivp.OdeResult:
+        """
+        Numerically integrates community over provided timespan using consumer-resource dynamics. \
+        Uses scipy.integrate.solve_ivp function and takes all keyword arguments that solve_ivp takes.
+        
+        :param time: Time duration for integration
+        :param y0: Initial state vector of species and resources (optional)
+        :param kwargs: Additional arguments passed to scipy.integrate.solve_ivp
+        :return: Integration result as a scipy.integrate.OdeResult object
+        """
+        # set initial concentrations of species and resources if not provided
+        if y0 is None:
+            y0 = np.concatenate((self.params["N0"], self.params["R0"]))
+        t_span = (0, time)  # time span for solution
+        # create dynamics
+        if not hasattr(self, "dynamics"):
+            self.create_dynamics()
+        return scipy.integrate.solve_ivp(self.dynamics, t_span, y0, args=(self.C, self.D, self.l, self.params), **kwargs)
