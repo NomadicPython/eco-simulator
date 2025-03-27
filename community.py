@@ -194,8 +194,8 @@ class Community:
             """
             return (
                 h  # intake
-                - R * np.einsum("ji,j", C, N)  # consumption
-                + np.einsum("b,b,j,jb,jb,jib->i", R, w, N, l, C, D) / w  # production
+                - (R * np.einsum("ja,j->a", C, N))  # consumption
+                + (np.einsum("b,b,j,jb,jb,jbi->i", R, w, N, l, C, D) / w)  # production
             )
 
         def dynamics(t, y, C, D, l, params):
@@ -246,7 +246,7 @@ class Community:
                 "intake": params["R_intake"],
                 "consumption": y[len(C) :] * np.einsum("ji,j", C, y[: len(C)]),
                 "production": np.einsum(
-                    "b,b,j,jb,jb,jib->i", y[len(C) :], params["w"], y[: len(C)], l, C, D
+                    "b,b,j,jb,jb,jbi->i", y[len(C) :], params["w"], y[: len(C)], l, C, D
                 )
                 / params["w"],
             }
