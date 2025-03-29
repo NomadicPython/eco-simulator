@@ -147,19 +147,25 @@ def main(experiment_name, time, update_data):
     sol = pond.integrate(time)
 
     # Print final dynamics
-    print(
-        "final rates",
-        pond.dynamics(0, sol.y[:, -1], pond.C, pond.D, pond.l, pond.params),
+    dynamics_at_end = pond.dynamics(
+        0, sol.y[:, -1], pond.C, pond.D, pond.l, pond.params
     )
-    print("final values", sol.y[:, -1])
-    print(
-        "final detailed dynamics\n",
-        pd.Dataframe(
-            pond.detailed_resource_dynamics(
-                sol.y[:, -1], pond.C, pond.D, pond.l, pond.params
-            )
-        ),
+    resources_at_end = pond.detailed_resource_dynamics(
+        sol.y[:, -1], pond.C, pond.D, pond.l, pond.params
     )
+    resources_at_end["Concentration"] = sol.y[len(pond.species_names) :, -1]
+    resources_at_end["Rates"] = dynamics_at_end[len(pond.species_names) :]
+    print("Species at end of simulation")
+    print(
+        pd.DataFrame(
+            {
+                "Species": pond.species_names,
+                "Concentration": sol.y[: len(pond.species_names), -1],
+                "Rates": dynamics_at_end[: len(pond.species_names)],
+            }
+        )
+    )
+    print(resources_at_end)
 
     # Plot species and resources over full time span
     split_index = len(pond.C)
