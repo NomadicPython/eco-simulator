@@ -242,18 +242,29 @@ class Community:
             :param w: energy factor for each resource
             :return: array of production rates of each resource
             """
-            return {
-                "intake": params["R_intake"],
-                "consumption": y[len(C) :] * np.einsum("ji,j", C, y[: len(C)]),
-                "production": np.einsum(
-                    "b,b,j,jb,jb,jbi->i", y[len(C) :], params["w"], y[: len(C)], l, C, D
-                )
-                / params["w"],
-            }
+            return pd.DataFrame(
+                {
+                    "Resource": self.resource_names,
+                    "Intake": params["R_intake"],
+                    "Consumption": y[len(C) :] * np.einsum("ji,j", C, y[: len(C)]),
+                    "Production": np.einsum(
+                        "b,b,j,jb,jb,jbi->i",
+                        y[len(C) :],
+                        params["w"],
+                        y[: len(C)],
+                        l,
+                        C,
+                        D,
+                    )
+                    / params["w"],
+                }
+            ).set_index("Resource")
 
         self.detailed_resource_dynamics = detailed_resource_dynamics
 
-    def integrate(self, time: int | float, y0: np.ndarray | None = None, **kwargs) -> scipy.integrate._ivp.ivp.OdeResult:
+    def integrate(
+        self, time: int | float, y0: np.ndarray | None = None, **kwargs
+    ) -> scipy.integrate._ivp.ivp.OdeResult:
         """
         Numerically integrates community over provided timespan using consumer-resource dynamics. \
         Uses scipy.integrate.solve_ivp function and takes all keyword arguments that solve_ivp takes.
@@ -270,4 +281,10 @@ class Community:
         # create dynamics
         if not hasattr(self, "dynamics"):
             self.create_dynamics()
-        return scipy.integrate.solve_ivp(self.dynamics, t_span, y0, args=(self.C, self.D, self.l, self.params), **kwargs)
+        return scipy.integrate.solve_ivp(
+            self.dynamics,
+            t_span,
+            y0,
+            args=(self.C, self.D, self.l, self.params),
+            **kwargs,
+        )
