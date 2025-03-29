@@ -1,9 +1,13 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
 import argparse
 import os
 import numpy as np
 import matplotlib.pyplot as plt
 from community import Community
 import scienceplots
+import pandas as pd
 
 plt.style.use(["science"])
 
@@ -129,7 +133,7 @@ def plot_production_consumption_matrices(
     return fig
 
 
-def main(experiment_name, time=1000):
+def main(experiment_name, time, update_data):
     # Load the community
     pond = Community(experiment_name)
     pond.load_data()
@@ -149,9 +153,11 @@ def main(experiment_name, time=1000):
     )
     print("final values", sol.y[:, -1])
     print(
-        "final detailed dynamics",
-        pond.detailed_resource_dynamics(
-            sol.y[:, -1], pond.C, pond.D, pond.l, pond.params
+        "final detailed dynamics\n",
+        pd.Dataframe(
+            pond.detailed_resource_dynamics(
+                sol.y[:, -1], pond.C, pond.D, pond.l, pond.params
+            )
         ),
     )
 
@@ -176,19 +182,20 @@ def main(experiment_name, time=1000):
         os.path.join(fig_path, "species_resources_first_10_percent"),
     )
 
-    # Plot consumer preference and leakage
-    save_figure(
-        plot_consumer_preference_and_leakage(
-            pond.C, pond.l, pond.species_names, pond.resource_names
-        ),
-        os.path.join(pond.data_path, "consumer_preference_leakage"),
-    )
+    if update_data:
+        # Plot consumer preference and leakage
+        save_figure(
+            plot_consumer_preference_and_leakage(
+                pond.C, pond.l, pond.species_names, pond.resource_names
+            ),
+            os.path.join(pond.data_path, "consumer_preference_leakage"),
+        )
 
-    # Plot production and consumption matrices
-    save_figure(
-        plot_production_consumption_matrices(pond.D, pond.resource_names),
-        os.path.join(pond.data_path, "production_consumption_matrices"),
-    )
+        # Plot production and consumption matrices
+        save_figure(
+            plot_production_consumption_matrices(pond.D, pond.resource_names),
+            os.path.join(pond.data_path, "production_consumption_matrices"),
+        )
 
 
 if __name__ == "__main__":
@@ -207,7 +214,14 @@ if __name__ == "__main__":
             default=100,
             help="Simulation time (default: 100).",
         )
+        parser.add_argument(
+            "-d",
+            "--update-data",
+            action="store_true",
+            default=False,
+            help="Save figures in the data_path directory instead of results_path.",
+        )
         return parser.parse_args()
 
     args = parse_arguments()
-    main(args.experiment_name, args.time)
+    main(args.experiment_name, args.time, args.update_data)
