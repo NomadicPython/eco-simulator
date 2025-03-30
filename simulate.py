@@ -150,9 +150,7 @@ def main(experiment_name, time, update_data):
     dynamics_at_end = pond.dynamics(
         0, sol.y[:, -1], pond.C, pond.D, pond.l, pond.params
     )
-    resources_at_end = pond.detailed_resource_dynamics(
-        sol.y[:, -1], pond.C, pond.D, pond.l, pond.params
-    )
+    resources_at_end = pond.resource_rates(sol.y[:, -1])
     resources_at_end["Concentration"] = sol.y[len(pond.species_names) :, -1]
     resources_at_end["Rates"] = dynamics_at_end[len(pond.species_names) :]
     print("Species at end of simulation")
