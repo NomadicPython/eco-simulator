@@ -304,14 +304,14 @@ class Community:
 
     def integrate(
         self, time: int | float, y0: np.ndarray | None = None, **kwargs
-    ) -> scipy.integrate.OdeResult:
+    ) -> scipy.integrate._ivp.ivp.OdeResult:
         """
         Numerically integrate the community over the provided timespan using consumer-resource dynamics.
 
         :param time: Time duration for integration.
         :param y0: Initial state vector of species and resources (optional).
         :param kwargs: Additional arguments passed to scipy.integrate.solve_ivp.
-        :return: Integration result as a scipy.integrate.OdeResult object.
+        :return: Integration result as a scipy.integrate._ivp.ivp.OdeResult object.
         """
         # set initial concentrations of species and resources if not provided
         if y0 is None:
