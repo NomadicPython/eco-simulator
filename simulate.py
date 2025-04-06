@@ -8,6 +8,7 @@ import matplotlib.pyplot as plt
 from community import Community
 import scienceplots
 import pandas as pd
+import networkx as nx
 
 plt.style.use(["science"])
 
@@ -133,7 +134,88 @@ def plot_production_consumption_matrices(
     return fig
 
 
-def main(experiment_name, time, update_data):
+def plot_network_graph(
+    species_names: np.ndarray,
+    resource_names: np.ndarray,
+    production: np.ndarray,
+    resource_intake: np.ndarray,
+) -> plt.Figure:
+    """
+    Plot network graph with fluxes annotated on the edges.
+
+    :param species_names: List of names of species.
+    :param resource_names: List of names of resources.
+    :param production: Numpy array-like object of shape (N, R, R) where
+        - N is the number of species.
+        - R is the number of resources.
+    :return: Matplotlib plot of the network graph.
+    """
+
+    def get_network_edges():
+        """
+        Create a dictionary of edges with flux and species information.
+
+        :return: Dictionary where keys are tuples of (node0, node1) and values are dictionaries with keys 'species' and 'flux'.
+        """
+        edges = {}
+        for species, matrix in zip(species_names, production):
+            for b in range(len(resource_names)):
+                for a in range(len(resource_names)):
+                    if matrix[b][a] > 0:
+                        edge_nodes = (resource_names[b], resource_names[a])
+                        if edge_nodes not in edges.keys():
+                            edges[edge_nodes] = {
+                                "species": [species],
+                                "flux": matrix[b][a],
+                            }
+                        elif edge_nodes in edges.keys():
+                            edges[edge_nodes]["species"].append(species)
+                            edges[edge_nodes]["flux"] += matrix[b][a]
+        return edges
+
+    # Annotate edges with labels
+    network_edges = get_network_edges()
+    edge_labels = {
+        (key[0], key[1]): f"{','.join(value['species'])}: {value['flux']}"
+        for key, value in network_edges.items()
+    }
+
+    # Draw the graph and return
+    g = nx.DiGraph()
+    g.add_edges_from(network_edges)
+
+    # Add edges for intake
+    color_map = []
+    for node in g.nodes:
+        if node.startswith("Hidden_"):
+            color_map.append("None")
+        else:
+            color_map.append("skyblue")  # Default color for visible nodes
+
+    for index, value in enumerate(resource_intake):
+        if value > 0:
+            hidden_node = f"Hidden_{resource_names[index]}"
+            g.add_node(hidden_node)
+            g.add_edge(hidden_node, resource_names[index])
+            edge_labels[(hidden_node, resource_names[index])] = f"In: {value}"
+            color_map.append("None")  # Ensure hidden nodes are invisible
+
+    pos = nx.planar_layout(g)
+
+    # Filter out hidden nodes from labels
+    visible_labels = {node: node for node in g.nodes if not node.startswith("Hidden_")}
+
+    nx.draw(g, pos, with_labels=False, arrows=True, node_color=color_map)
+    nx.draw_networkx_labels(
+        g, pos, labels=visible_labels
+    )  # Add labels only for visible nodes
+    nx.draw_networkx_edge_labels(g, pos, edge_labels=edge_labels)
+
+    fig = plt.gcf()  # Get the current figure
+    return fig
+
+
+def main(experiment_name, time, update_data, network_graph):
     # Load the community
     pond = Community(experiment_name)
     pond.load_data()
@@ -150,9 +232,7 @@ def main(experiment_name, time, update_data):
     dynamics_at_end = pond.dynamics(
         0, sol.y[:, -1], pond.C, pond.D, pond.l, pond.params
     )
-    resources_at_end = pond.detailed_resource_dynamics(
-        sol.y[:, -1], pond.C, pond.D, pond.l, pond.params
-    )
+    resources_at_end = pond.resource_rates(sol.y[:, -1])
     resources_at_end["Concentration"] = sol.y[len(pond.species_names) :, -1]
     resources_at_end["Rates"] = dynamics_at_end[len(pond.species_names) :]
     print("Species at end of simulation")
@@ -203,6 +283,17 @@ def main(experiment_name, time, update_data):
             os.path.join(pond.data_path, "production_consumption_matrices"),
         )
 
+    if network_graph:
+        save_figure(
+            plot_network_graph(
+                species_names=pond.species_names,
+                resource_names=pond.resource_names,
+                production=np.round(pond.resource_production(sol.y[:, -1]), 2),
+                resource_intake=pond.params["R_intake"],
+            ),
+            os.path.join(fig_path, "network_fluxes_at_steady_state"),
+        )
+
 
 if __name__ == "__main__":
 
@@ -227,7 +318,14 @@ if __name__ == "__main__":
             default=False,
             help="Save figures in the data_path directory instead of results_path.",
         )
+        parser.add_argument(
+            "-g",
+            "--network-graph",
+            action="store_true",
+            default=False,
+            help="Draw network fluxes at steady state.",
+        )
         return parser.parse_args()
 
     args = parse_arguments()
-    main(args.experiment_name, args.time, args.update_data)
+    main(args.experiment_name, args.time, args.update_data, args.network_graph)

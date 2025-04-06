@@ -30,18 +30,11 @@ class Community:
         "Intialize the community with the data that is same for an experiment"
         self.exp = experiment_name
 
-    def load_data(self, data_path: str | None = None):
+    def load_data(self, data_path: str | None = None) -> None:
         """
-        Assumes existing data in the folder
-        N0 = param_dict["N0"]
-        R0 = param_dict["R0"]
-        growth_factor = param_dict["growth_factor"]
-        maintenance_energy = param_dict["maintenance_energy"]
-        w = np.array(param_dict["w"])
-        cv = param_dict["cv"]
-        R_intake = param_dict["R_intake"]
+        Load experimental data from the specified path.
 
-        :param data_path: (Optional)
+        :param data_path: Path to the data folder (optional, defaults to the experiment's data folder if None).
         """
         if data_path == None:
             data_path = os.path.abspath(
@@ -76,13 +69,13 @@ class Community:
         ).to_numpy()
         self.data_path = data_path
 
-    def create_data(self, num_species: int, num_resources: int):
+    def create_data(self, num_species: int, num_resources: int) -> None:
         """
-        Generate experimental setup for a new one
+        Generate experimental setup for a new experiment.
 
-        :param num_species: Number of species in the system
-        :param num_resources: Number of resources in the system
-        :raise ValueError: If directory for experiment name already exists
+        :param num_species: Number of species in the system.
+        :param num_resources: Number of resources in the system.
+        :raise ValueError: If the directory for the experiment name already exists.
         """
         data_path = os.path.abspath(
             os.path.join(os.path.dirname(__file__), "experiments", self.exp, "data")
@@ -145,9 +138,15 @@ class Community:
             f"Resources: {self.C.shape[1]}\n"
         )
 
-    def create_dynamics(self):
+    def create_dynamics(self) -> None:
         """
-        Create the dynamics of the system, vectorized
+        Create the dynamics of the system, including consumer and resource dynamics.
+
+        This method defines and assigns the following dynamic functions as attributes of the class:
+        - `dynamics`: Calculates the rate of change of species and resources.
+        - `resource_rates`: Calculates the rate of change of resources.
+        - `resource_consumption`: Calculates resource consumption rates for each species.
+        - `resource_production`: Calculates resource production rates for each species and resource.
         """
 
         def consumer_dynamics(
@@ -160,15 +159,16 @@ class Community:
             m: np.ndarray,
         ) -> np.ndarray:
             """
-            Calculate the growth rate of the species
-            :param N: abundance of species
-            :param R: abundance of resources
-            :param C: consumer preference matrix
-            :param g: growth factor for each species
-            :param l: leakage coefficient matrix (species x resources)
-            :param w: energy factor for each resource
-            :param m: maintenance energy for each species
-            :return: array of growth rates of each species
+            Calculate the growth rate of the species.
+
+            :param N: Abundance of species.
+            :param R: Abundance of resources.
+            :param C: Consumer preference matrix.
+            :param g: Growth factor for each species.
+            :param l: Leakage coefficient matrix (species x resources).
+            :param w: Energy factor for each resource.
+            :param m: Maintenance energy for each species.
+            :return: Array of growth rates of each species.
             """
             return g * N * (np.einsum("j,ij,ij,j->i", w, 1 - l, C, R) - m)
 
@@ -182,15 +182,16 @@ class Community:
             w: np.ndarray,
         ) -> np.ndarray:
             """
-            Calculate the rate of change of resources
-            :param N: abundance of species
-            :param R: abundance of resources
-            :param C: consumer preference matrix
-            :param D: array of metabolic matrices for each species
-            :param h: uptake rate for resources
-            :param l: leakage coefficient matrix (species x resources)
-            :param w: energy factor for each resource
-            :return: array of production rates of each resource
+            Calculate the rate of change of resources.
+
+            :param N: Abundance of species.
+            :param R: Abundance of resources.
+            :param C: Consumer preference matrix.
+            :param D: Array of metabolic matrices for each species.
+            :param h: Uptake rate for resources.
+            :param l: Leakage coefficient matrix (species x resources).
+            :param w: Energy factor for each resource.
+            :return: Array of production rates of each resource.
             """
             return (
                 h  # intake
@@ -198,15 +199,24 @@ class Community:
                 + (np.einsum("b,b,j,jb,jb,jbi->i", R, w, N, l, C, D) / w)  # production
             )
 
-        def dynamics(t, y, C, D, l, params):
+        def dynamics(
+            t: float,
+            y: np.ndarray,
+            C: np.ndarray,
+            D: np.ndarray,
+            l: np.ndarray,
+            params: dict,
+        ) -> np.ndarray:
             """
-            :param t: time
-            :param y: state vector
-            :param C: consumer preference matrix
-            :param D: array of metabolic matrices for each species
-            :param l: leakage coefficient matrix (species x resources)
-            :param params: parameters
-            :return: rate of change of species and resources
+            Calculate the rate of change of species and resources.
+
+            :param t: Time.
+            :param y: State vector.
+            :param C: Consumer preference matrix.
+            :param D: Array of metabolic matrices for each species.
+            :param l: Leakage coefficient matrix (species x resources).
+            :param params: Parameters.
+            :return: Rate of change of species and resources.
             """
             # unpack state vector
             N = y[: len(C)]
@@ -227,52 +237,81 @@ class Community:
                 )
             )
 
-        self.dynamics = dynamics
-
-        def detailed_resource_dynamics(y, C, D, l, params) -> dict:
+        def resource_rates(y: np.ndarray) -> pd.DataFrame:
             """
-            Calculate the rate of change of resources
+            Calculate the rate of change of resources.
 
-            :param N: abundance of species
-            :param R: abundance of resources
-            :param C: consumer preference matrix
-            :param D: array of metabolic matrices for each species
-            :param h: uptake rate for resources
-            :param l: leakage coefficient matrix (species x resources)
-            :param w: energy factor for each resource
-            :return: array of production rates of each resource
+            :param y: Abundance of species and resources in a concatenated array.
+            :return: Pandas DataFrame with intake, consumption, and production rates of resources.
             """
             return pd.DataFrame(
                 {
                     "Resource": self.resource_names,
-                    "Intake": params["R_intake"],
-                    "Consumption": y[len(C) :] * np.einsum("ji,j", C, y[: len(C)]),
+                    "Intake": self.params["R_intake"],
+                    "Consumption": y[len(self.C) :]
+                    * np.einsum("ji,j", self.C, y[: len(self.C)]),
                     "Production": np.einsum(
-                        "b,b,j,jb,jb,jbi->i",
-                        y[len(C) :],
-                        params["w"],
-                        y[: len(C)],
-                        l,
-                        C,
-                        D,
-                    )
-                    / params["w"],
+                        "b,b,j,jb,jb,jba,a->a",
+                        y[len(self.C) :],
+                        self.params["w"],
+                        y[: len(self.C)],
+                        self.l,
+                        self.C,
+                        self.D,
+                        1 / self.params["w"],
+                    ),
                 }
             ).set_index("Resource")
 
-        self.detailed_resource_dynamics = detailed_resource_dynamics
+        def resource_consumption(y: np.ndarray) -> np.ndarray:
+            """
+            Calculate the resource consumption rates for each species.
+
+            :param y: Abundance of species and resources in a concatenated array.
+            :return: A 2D array where each element [j, a] represents the consumption rate
+                     of resource a by species j.
+            """
+            return np.einsum(
+                "a,j,ja->ja",
+                y[len(self.species_names) :],
+                y[: len(self.species_names)],
+                self.C,
+            )
+
+        def resource_production(y: np.ndarray) -> np.ndarray:
+            """
+            Calculate the resource production rates for each species and resource.
+
+            :param y: Abundance of species and resources in a concatenated array.
+            :return: A 3D array where each element [j, b, a] represents the production rate
+                     of resource 'a' by species 'j' using resource 'b'.
+            """
+            return np.einsum(
+                "b,b,j,jb,jb,jba,a->jba",
+                y[len(self.C) :],
+                self.params["w"],
+                y[: len(self.C)],
+                self.l,
+                self.C,
+                self.D,
+                1 / self.params["w"],
+            )
+
+        self.dynamics = dynamics
+        self.resource_rates = resource_rates
+        self.resource_consumption = resource_consumption
+        self.resource_production = resource_production
 
     def integrate(
         self, time: int | float, y0: np.ndarray | None = None, **kwargs
     ) -> scipy.integrate._ivp.ivp.OdeResult:
         """
-        Numerically integrates community over provided timespan using consumer-resource dynamics. \
-        Uses scipy.integrate.solve_ivp function and takes all keyword arguments that solve_ivp takes.
-        
-        :param time: Time duration for integration
-        :param y0: Initial state vector of species and resources (optional)
-        :param kwargs: Additional arguments passed to scipy.integrate.solve_ivp
-        :return: Integration result as a scipy.integrate.OdeResult object
+        Numerically integrate the community over the provided timespan using consumer-resource dynamics.
+
+        :param time: Time duration for integration.
+        :param y0: Initial state vector of species and resources (optional).
+        :param kwargs: Additional arguments passed to scipy.integrate.solve_ivp.
+        :return: Integration result as a scipy.integrate._ivp.ivp.OdeResult object.
         """
         # set initial concentrations of species and resources if not provided
         if y0 is None:
