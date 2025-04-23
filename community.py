@@ -239,10 +239,14 @@ class Community:
 
         def resource_rates(y: np.ndarray) -> pd.DataFrame:
             """
-            Calculate the rate of change of resources.
+            Calculate detailed resource dynamics including intake, consumption, and production.
 
-            :param y: Abundance of species and resources in a concatenated array.
-            :return: Pandas DataFrame with intake, consumption, and production rates of resources.
+            :param y: State vector containing species and resource abundances
+            :param C: Consumer preference matrix
+            :param D: Array of metabolic matrices for each species
+            :param l: Leakage coefficient matrix (species x resources)
+            :param params: Dictionary of parameters including R_intake and w
+            :return: DataFrame with detailed resource dynamics (intake, consumption, production)
             """
             return pd.DataFrame(
                 {
