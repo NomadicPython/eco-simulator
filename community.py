@@ -72,6 +72,7 @@ class Community:
     def create_data(self, num_species: int, num_resources: int) -> None:
         """
         Generate experimental setup for a new experiment.
+        TODO: Refactor using save_data, BUG: metabolic matrices
 
         :param num_species: Number of species in the system.
         :param num_resources: Number of resources in the system.
@@ -129,6 +130,50 @@ class Community:
         }
         with open(os.path.join(data_path, "parameters.json"), "w") as f:
             json.dump(param_dict, f, indent=4)
+        
+    def save_data(self, path):
+        """
+        Save the community's data to the specified path.
+
+        :param path: Path to the directory where data will be saved.
+        """
+        # Ensure the directory exists
+        os.makedirs(path, exist_ok=True)
+
+        # Convert numpy arrays in params to lists for JSON serialization
+        serializable_params = {
+            key: (value.tolist() if isinstance(value, np.ndarray) else value)
+            for key, value in self.params.items()
+        }
+
+        # Store parameter dict in JSON
+        with open(os.path.join(path, "parameters.json"), "w") as f:
+            json.dump(serializable_params, f, indent=4)
+
+        # Create the metabolic csv
+        metabolic_matrices = pd.DataFrame(
+            np.concatenate(self.D),
+            index=np.repeat(self.species_names, len(self.resource_names)),
+            columns=self.resource_names,
+        )
+        metabolic_matrices["resource"] = self.resource_names * len(self.species_names)
+        metabolic_matrices.to_csv(os.path.join(path, "metabolic_matrices.csv"))
+
+        # Create the consumer_preference csv
+        consumer_preference = pd.DataFrame(
+            self.C,
+            index=self.species_names,
+            columns=self.resource_names,
+        )
+        consumer_preference.to_csv(os.path.join(path, "consumer_preference.csv"))
+
+        # Create the leakage coefficients csv
+        leakage_coefficients = pd.DataFrame(
+            self.l,
+            index=self.species_names,
+            columns=self.resource_names,
+        )
+        leakage_coefficients.to_csv(os.path.join(path, "leakage_coefficients.csv"))
 
     def __str__(self) -> str:
         """Prints the community object with the data loaded"""
