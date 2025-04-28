@@ -78,5 +78,5 @@ def extract_d_matrices(combined_metabolic_csv: str) -> np.ndarray:
     """
     data = pd.read_csv(combined_metabolic_csv, header=0, index_col=0)
     species_list = data.index.unique()
-    D = [data.loc[species].set_index("resource") for species in species_list]
+    D = [create_d_matrix(data.loc[species].set_index("resource")) for species in species_list]
     return np.array(D)
