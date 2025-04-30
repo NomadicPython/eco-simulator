@@ -30,7 +30,7 @@ class Community:
         "Intialize the community with the data that is same for an experiment"
         self.exp = experiment_name
 
-    def load_data(self, data_path: str | None = None) -> None:
+    def load_data(self, data_path: str | None = None, randomize: bool = True) -> None:
         """
         Load experimental data from the specified path.
 
@@ -51,17 +51,23 @@ class Community:
                 self.params[key] = np.array(value)
 
         # load consumer preference
+        if randomize:
+            cv = self.params["cv"]
+        else:
+            cv = 0
         self.C, self.species_names, self.resource_names = create_c_matrix(
             pd.read_csv(
                 os.path.join(data_path, "consumer_preference.csv"),
                 index_col=0,
                 header=0,
             ),
-            cv=self.params["cv"],
+            cv=cv,
         )
 
         # load metabolic matrices
-        self.D = extract_d_matrices(os.path.join(data_path, "metabolic_matrices.csv"))
+        self.D = extract_d_matrices(
+            os.path.join(data_path, "metabolic_matrices.csv"), use_dirichlet=randomize
+        )
 
         # load leakage coefficients
         self.l = pd.read_csv(
@@ -130,7 +136,7 @@ class Community:
         }
         with open(os.path.join(data_path, "parameters.json"), "w") as f:
             json.dump(param_dict, f, indent=4)
-        
+
     def save_data(self, path):
         """
         Save the community's data to the specified path.

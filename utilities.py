@@ -70,7 +70,9 @@ def create_d_matrix(metabolic_df: pd.DataFrame) -> np.ndarray:
     )
 
 
-def extract_d_matrices(combined_metabolic_csv: str) -> np.ndarray:
+def extract_d_matrices(
+    combined_metabolic_csv: str, use_dirichlet: bool = True
+) -> np.ndarray:
     """Extracts species specific DF from a single csv file
 
     :param combined_metabolic_csv: path to the csv file
@@ -78,5 +80,11 @@ def extract_d_matrices(combined_metabolic_csv: str) -> np.ndarray:
     """
     data = pd.read_csv(combined_metabolic_csv, header=0, index_col=0)
     species_list = data.index.unique()
-    D = [create_d_matrix(data.loc[species].set_index("resource")) for species in species_list]
+    if use_dirichlet:
+        D = [
+            create_d_matrix(data.loc[species].set_index("resource"))
+            for species in species_list
+        ]
+    else:
+        D = [data.loc[species].set_index("resource") for species in species_list]
     return np.array(D)
