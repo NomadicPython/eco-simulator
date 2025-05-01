@@ -35,6 +35,7 @@ class Community:
         Load experimental data from the specified path.
 
         :param data_path: Path to the data folder (optional, defaults to the experiment's data folder if None).
+        :param randomize: If true, consumer preference and metabolic matrices use random sampling from existing data.
         """
         if data_path == None:
             data_path = os.path.abspath(
@@ -382,3 +383,34 @@ class Community:
             args=(self.C, self.D, self.l, self.params),
             **kwargs,
         )
+
+    def optimized_integrate(
+        self,
+        time: int | float,
+        y0: np.ndarray | None = None,
+        time_step: int = 1000,
+        threshold: float = 10 ** (-4),
+        **kwargs,
+    ) -> scipy.integrate._ivp.ivp.OdeResult:
+        """
+        Numerically integrate the community over the provided timespan using consumer-resource dynamics.
+
+        :param time: Time duration for integration.
+        :param y0: Initial state vector of species and resources (optional).
+        :param kwargs: Additional arguments passed to scipy.integrate.solve_ivp.
+        :return: Integration result as a scipy.integrate._ivp.ivp.OdeResult object.
+        """
+        # set initial concentrations of species and resources if not provided
+        if y0 is None:
+            y0 = np.concatenate((self.params["N0"], self.params["R0"]))
+        num_steps, leftover_time = time // time_step, time % time_step
+        # simulate in batches of time_step duration
+        for i in range(num_steps):
+            sol = self.integrate(time_step, y0, **kwargs)
+            y0 = sol.y[:, -1]
+            y0[: len(self.species_names)] = y0[: len(self.species_names)] * (
+                y0[: len(self.species_names)] > threshold
+            )
+        # simulate for any remaining time
+        sol = self.integrate(leftover_time, y0, **kwargs)
+        return sol
