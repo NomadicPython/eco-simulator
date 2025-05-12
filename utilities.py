@@ -8,6 +8,7 @@ Copyright (c) 2025
 """
 import numpy as np
 import pandas as pd
+import os
 
 
 def load_data(csv_file: str) -> pd.DataFrame:
@@ -42,9 +43,10 @@ def create_c_matrix(
 ) -> np.ndarray:
     """Generate a stochastic consumer preference matrix from template
 
-    :param consumer_df: pandas dataframe with integer values for consumer preferences
-                        serve as the mean for the randomly sampled value.
+    :param consumer_pref: pandas dataframe with integer values for consumer preferences
+                          serve as the mean for the randomly sampled value.
     :param cv: A single coefficient of variation used for random sampling
+    :param replacement_type: 'perturbation' (default) | 'minimum', determines how zeros are replaced
     :return c_matrix: numpy matrix
     """
     species_names = consumer_pref.index.to_list()
@@ -70,7 +72,9 @@ def create_d_matrix(metabolic_df: pd.DataFrame) -> np.ndarray:
     )
 
 
-def extract_d_matrices(combined_metabolic_csv: str) -> np.ndarray:
+def extract_d_matrices(
+    combined_metabolic_csv: str, use_dirichlet: bool = True
+) -> np.ndarray:
     """Extracts species specific DF from a single csv file
 
     :param combined_metabolic_csv: path to the csv file
@@ -78,5 +82,29 @@ def extract_d_matrices(combined_metabolic_csv: str) -> np.ndarray:
     """
     data = pd.read_csv(combined_metabolic_csv, header=0, index_col=0)
     species_list = data.index.unique()
-    D = [data.loc[species].set_index("resource") for species in species_list]
+    if use_dirichlet:
+        D = [
+            create_d_matrix(data.loc[species].set_index("resource"))
+            for species in species_list
+        ]
+    else:
+        D = [data.loc[species].set_index("resource") for species in species_list]
     return np.array(D)
+
+
+def next_experiment_path(log_folder: str) -> str:
+    """Finds the next experiment number in the log folder
+
+    :param log_folder: path to the log folder
+    :return: path to the next experiment folder
+    """
+    subdirs = [
+        subdir
+        for subdir in os.listdir(log_folder)
+        if os.path.isdir(os.path.join(log_folder, subdir))
+    ]
+    if not subdirs:
+        return os.path.join(log_folder, "0001")
+    else:
+        last_experiment = int(sorted(subdirs)[-1])
+        return os.path.join(log_folder, str(last_experiment + 1).zfill(4))

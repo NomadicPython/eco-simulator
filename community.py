@@ -30,11 +30,12 @@ class Community:
         "Intialize the community with the data that is same for an experiment"
         self.exp = experiment_name
 
-    def load_data(self, data_path: str | None = None) -> None:
+    def load_data(self, data_path: str | None = None, randomize: bool = True) -> None:
         """
         Load experimental data from the specified path.
 
         :param data_path: Path to the data folder (optional, defaults to the experiment's data folder if None).
+        :param randomize: If true, consumer preference and metabolic matrices use random sampling from existing data.
         """
         if data_path == None:
             data_path = os.path.abspath(
@@ -51,17 +52,23 @@ class Community:
                 self.params[key] = np.array(value)
 
         # load consumer preference
+        if randomize:
+            cv = self.params["cv"]
+        else:
+            cv = 0
         self.C, self.species_names, self.resource_names = create_c_matrix(
             pd.read_csv(
                 os.path.join(data_path, "consumer_preference.csv"),
                 index_col=0,
                 header=0,
             ),
-            cv=self.params["cv"],
+            cv=cv,
         )
 
         # load metabolic matrices
-        self.D = extract_d_matrices(os.path.join(data_path, "metabolic_matrices.csv"))
+        self.D = extract_d_matrices(
+            os.path.join(data_path, "metabolic_matrices.csv"), use_dirichlet=randomize
+        )
 
         # load leakage coefficients
         self.l = pd.read_csv(
@@ -72,6 +79,7 @@ class Community:
     def create_data(self, num_species: int, num_resources: int) -> None:
         """
         Generate experimental setup for a new experiment.
+        TODO: Refactor using save_data, BUG: metabolic matrices
 
         :param num_species: Number of species in the system.
         :param num_resources: Number of resources in the system.
@@ -129,6 +137,50 @@ class Community:
         }
         with open(os.path.join(data_path, "parameters.json"), "w") as f:
             json.dump(param_dict, f, indent=4)
+
+    def save_data(self, path):
+        """
+        Save the community's data to the specified path.
+
+        :param path: Path to the directory where data will be saved.
+        """
+        # Ensure the directory exists
+        os.makedirs(path, exist_ok=True)
+
+        # Convert numpy arrays in params to lists for JSON serialization
+        serializable_params = {
+            key: (value.tolist() if isinstance(value, np.ndarray) else value)
+            for key, value in self.params.items()
+        }
+
+        # Store parameter dict in JSON
+        with open(os.path.join(path, "parameters.json"), "w") as f:
+            json.dump(serializable_params, f, indent=4)
+
+        # Create the metabolic csv
+        metabolic_matrices = pd.DataFrame(
+            np.concatenate(self.D),
+            index=np.repeat(self.species_names, len(self.resource_names)),
+            columns=self.resource_names,
+        )
+        metabolic_matrices["resource"] = self.resource_names * len(self.species_names)
+        metabolic_matrices.to_csv(os.path.join(path, "metabolic_matrices.csv"))
+
+        # Create the consumer_preference csv
+        consumer_preference = pd.DataFrame(
+            self.C,
+            index=self.species_names,
+            columns=self.resource_names,
+        )
+        consumer_preference.to_csv(os.path.join(path, "consumer_preference.csv"))
+
+        # Create the leakage coefficients csv
+        leakage_coefficients = pd.DataFrame(
+            self.l,
+            index=self.species_names,
+            columns=self.resource_names,
+        )
+        leakage_coefficients.to_csv(os.path.join(path, "leakage_coefficients.csv"))
 
     def __str__(self) -> str:
         """Prints the community object with the data loaded"""
@@ -331,3 +383,40 @@ class Community:
             args=(self.C, self.D, self.l, self.params),
             **kwargs,
         )
+
+    def optimized_integrate(
+        self,
+        time: int | float,
+        y0: np.ndarray | None = None,
+        time_step: int = 1000,
+        threshold: float = 10 ** (-4),
+        **kwargs,
+    ) -> scipy.integrate._ivp.ivp.OdeResult:
+        """
+        Numerically integrate the community over the provided timespan using consumer-resource dynamics.
+        Sets species with really low presence to 0.
+
+        :param time: Time duration for integration.
+        :param y0: Initial state vector of species and resources (optional).
+        :param kwargs: Additional arguments passed to scipy.integrate.solve_ivp.
+        :return: Integration result as a scipy.integrate._ivp.ivp.OdeResult object.
+        """
+        # set initial concentrations of species and resources if not provided
+        if y0 is None:
+            y0 = np.concatenate((self.params["N0"], self.params["R0"]))
+        num_steps, leftover_time = time // time_step, time % time_step
+        # simulate in batches of time_step duration
+        for i in range(num_steps):
+            prev_y0 = y0
+            sol = self.integrate(time_step, y0, **kwargs)
+            y0 = sol.y[:, -1]
+            # set species with low presence to 0
+            y0[: len(self.species_names)] = y0[: len(self.species_names)] * (
+                y0[: len(self.species_names)] > threshold
+            )
+            # if the solution has not changed, break the loop
+            if (np.round(prev_y0, 4) == np.round(y0, 4)).all():
+                break
+        # simulate for any remaining time
+        sol = self.integrate(leftover_time, y0, **kwargs)
+        return sol
