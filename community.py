@@ -394,6 +394,7 @@ class Community:
     ) -> scipy.integrate._ivp.ivp.OdeResult:
         """
         Numerically integrate the community over the provided timespan using consumer-resource dynamics.
+        Sets species with really low presence to 0.
 
         :param time: Time duration for integration.
         :param y0: Initial state vector of species and resources (optional).
@@ -406,11 +407,16 @@ class Community:
         num_steps, leftover_time = time // time_step, time % time_step
         # simulate in batches of time_step duration
         for i in range(num_steps):
+            prev_y0 = y0
             sol = self.integrate(time_step, y0, **kwargs)
             y0 = sol.y[:, -1]
+            # set species with low presence to 0
             y0[: len(self.species_names)] = y0[: len(self.species_names)] * (
                 y0[: len(self.species_names)] > threshold
             )
+            # if the solution has not changed, break the loop
+            if (np.round(prev_y0, 4) == np.round(y0, 4)).all():
+                break
         # simulate for any remaining time
         sol = self.integrate(leftover_time, y0, **kwargs)
         return sol
