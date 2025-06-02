@@ -108,3 +108,56 @@ def next_experiment_path(log_folder: str) -> str:
     else:
         last_experiment = int(sorted(subdirs)[-1])
         return os.path.join(log_folder, str(last_experiment + 1).zfill(4))
+
+
+def get_batch_simulations(experiment_path: str) -> dict:
+    """Get all valid batch simulation runs from the experiment path
+
+    :param experiment_path: path to the experiment folder "experiments"
+    :return: dictionary with experiment name as key and list of simulation run path as value
+    """
+    return {
+        subdir: sorted(
+            [
+                os.path.join(experiment_path, subdir, "batch_results", run)
+                for run in os.listdir(
+                    os.path.join(experiment_path, subdir, "batch_results")
+                )
+                if os.path.exists(
+                    os.path.join(
+                        experiment_path,
+                        subdir,
+                        "batch_results",
+                        run,
+                        "simulation_parameters.txt",
+                    )
+                )
+            ]
+        )
+        for subdir in os.listdir(experiment_path)
+        if os.path.isdir(os.path.join(experiment_path, subdir, "batch_results"))
+    }
+
+
+def get_simulation_parameters(simulation_path: str) -> dict:
+    """Get simulation parameters from the simulation path
+
+    :param simulation_path: path to the simulation folder
+    :return: dictionary with simulation parameters
+    """
+    with open(os.path.join(simulation_path, "simulation_parameters.txt"), "r") as f:
+        lines = f.readlines()
+    return {line.split(":")[0].strip(): line.split(":")[1].strip() for line in lines}
+
+
+def get_stable_states(simulation_results_path: str) -> pd.DataFrame:
+    """Get stable states from the simulation results path
+
+    :param simulation_results_path: path to the simulation results folder
+    :return: pandas dataframe with stable states
+    """
+    df = pd.read_csv(os.path.join(simulation_results_path, "simulation_results.csv"))
+    S_col = [col for col in df.columns if col.startswith("S") and col != "Simulation"]
+    df = df[S_col].map(lambda x: 1 if x > 0 else 0)
+
+    return df.value_counts().reset_index().set_index("count")
