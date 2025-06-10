@@ -76,6 +76,11 @@ class Community:
         ).to_numpy()
         self.data_path = data_path
 
+        # replace any negative values in C, D and l with 0
+        self.C[self.C < 0] = 0
+        self.D[self.D < 0] = 0
+        self.l[self.l < 0] = 0
+
     def create_data(self, num_species: int, num_resources: int) -> None:
         """
         Generate experimental setup for a new experiment.
