@@ -135,17 +135,15 @@ def cv_sim_counts(
     return counts
 
 
-def cv_simulations(batch_simulations: dict, cv_sim_minimum: int = 10):
+def cv_simulations(batch_simulations: dict, cv_sim_minimum: int = 10, cv_values: list = [0.01, 0.1, 0.3, 0.4]):
     """
     Run simulations with different coefficients of variation (cv) for the initial species values.
 
     :param batch_simulations: Dictionary containing batch simulation parameters.
     :param cv_sim_minimum: Minimum number of simulations to run for each cv value.
+    :param cv_values: List of cv values to use for simulations.
     :return: None
     """
-    # cv values
-    cv_values = [0.01, 0.1]
-
     for experiment_name in batch_simulations:
         cv_counts = cv_sim_counts(experiment_name, cv_values, batch_simulations)
         for cv in cv_values:
